@@ -1,4 +1,5 @@
 #include "stage.hh"
+
 using namespace Stg;
 
 const bool verbose = false;
@@ -12,6 +13,7 @@ const double stopdist = 0.5;
 const int avoidduration = 10;
 const int workduration = 20;
 const int payload = 1;
+
 
 double have[4][4] = { 
   //  { -120, -180, 180, 180 },
@@ -62,6 +64,8 @@ private:
   bool at_dest;
 
 public:
+  int robot_type;
+ 
   Robot( ModelPosition* pos, 
 			Model* source,
 			Model* sink ) 
@@ -110,6 +114,8 @@ public:
 		  blobfinder->AddUpdateCallback( (stg_model_callback_t)BlobFinderUpdate, this );
 		  blobfinder->Subscribe();
 		}
+		
+	 robot_type = 1;
 }
 
   void Dock()
@@ -499,11 +505,16 @@ public:
 // Stage calls this when the model starts up
 extern "C" int Init( Model* mod )
 {  
-  Robot* robot = new Robot( (ModelPosition*)mod,
+	Robot* robot = new Robot( (ModelPosition*)mod,
 									 mod->GetWorld()->GetModel( "source" ),
 									 mod->GetWorld()->GetModel( "sink" ) );
-    
-  return 0; //ok
+
+	if (mod->GetWorld()->robots_table == NULL)
+		mod->GetWorld()->robots_table = g_hash_table_new( g_direct_hash, g_direct_equal );
+	
+	g_hash_table_insert( mod->GetWorld()->robots_table, (gpointer)mod->GetId(), robot );
+
+	return 0; //ok
 }
 
 
