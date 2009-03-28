@@ -28,13 +28,22 @@ double refuel[4][4] =
     { 0, 0, -90, -90 }
 };
 
+double hospital[4][4] =
+{
+    {  0, 0, 45, 120 },
+    { 0,-90, -60, -160 },
+    { -90, -90, 180, 180 },
+    { -90, -180, -90, -90 }
+};
+
 typedef enum
 {
     MODE_IDLE=0,
     MODE_DOCK,
     MODE_UNDOCK,
     MODE_DEAD,
-    MODE_RESCUE
+    MODE_RESCUE,
+    MODE_APPROCHE
 } nav_mode_t;
 
 GQueue *jobs;
