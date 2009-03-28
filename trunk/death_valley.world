@@ -1,4 +1,4 @@
-# FASR demo world 
+# FASR demo world
 # Authors: Richard Vaughan
 # $Id: fasr.world,v 1.4 2008-04-01 23:57:41 rtv Exp $
 
@@ -7,29 +7,29 @@ include "map.inc"
 include "sick.inc"
 
 interval_sim 100  # simulation timestep in milliseconds
-interval_real 0 # real-time interval between simulation updates in milliseconds 
-paused 0
+interval_real 100 # real-time interval between simulation updates in milliseconds
+paused 1
 
 resolution 0.02
 
-# threads may speed things up here depending on available CPU cores & workload 
- threadpool 8 
+# threads may speed things up here depending on available CPU cores & workload
+ threadpool 8
 # threadpool 0
 
 
 # configure the GUI window
 window
-( 
-  size [ 788.000 842.000 ] 
+(
+  size [ 600.000 650.000 ]
 
-  center [ 0.240 -0.382 ] 
+  center [ -0.700 -0.556 ]
   rotate [ 0 0 ]
-  scale 35.648 
+  scale 32.407
 
   pcam_loc [ 0 -4.000 2.000 ]
   pcam_angle [ 70.000 0 ]
   pcam_on 0
-  
+
   show_data 1
   show_flags 1
 
@@ -38,7 +38,7 @@ window
 
 # load an environment bitmap
 floorplan
-( 
+(
   name "cave"
   size [16.000 16.000 0.600]
   pose [0 0 0 0]
@@ -63,24 +63,24 @@ zone
 
 define charging_bump model
 (
-  pose [0.240 0 -0.100 0 ] 
-  size [0.120 0.050 0.100] 
-  take_watts 1000.0 
-  color "orange" 
+  pose [0.240 0 -0.100 0 ]
+  size [0.120 0.050 0.100]
+  take_watts 1000.0
+  color "orange"
   obstacle_return 0
 )
 
-define autorob pioneer2dx		  
-(		 
+define autorob pioneer2dx
+(
  sicklaser( samples 16 range_max 5 laser_return 2 watts 30 )
  ctrl "fasr"
- joules 100000 
- joules_capacity 400000 
+ joules 100000
+ joules_capacity 400000
  fiducial_return 0
  # charging_bump( fiducial( range 3 pose [ 0 0 -0.100 0 ] ) )
 
- gripper( pose [0.250 0 -0.220 0]  
-          take_watts 1000.0 
+ gripper( pose [0.250 0 -0.220 0]
+          take_watts 1000.0
           fiducial( range 3 )
           # paddles [ "closed" "up" ]
 			 obstacle_return 0 # cheating for simplicity
@@ -89,21 +89,21 @@ define autorob pioneer2dx
 )
 
 define charge_station model
-(  
+(
   size [ 0.100 0.300 0.100 ]
   color "purple"
-  
+
   # side blocks to restrict view angle
   model( color "purple" size [0.100 0.050 0.250] pose [ 0 0.100 0 0 ] )
-  model( color "purple" size [0.100 0.050 0.250] pose [ 0 -0.100 0 0 ] ) 
+  model( color "purple" size [0.100 0.050 0.250] pose [ 0 -0.100 0 0 ] )
 
   # the charging block
-  model( 
+  model(
     pose [ 0.010 0 0 0 ]
     color "yellow"
     size [ 0.050 0.200 0.100 ]
     joules -1  # provides infinite energy
-    give_watts 1000 
+    give_watts 1000
     fiducial_return 2 # look for this in the fiducial sensor
    )
 
@@ -114,28 +114,57 @@ charge_station(  pose [ 7.940 -2.349 0 0 ] )
 charge_station(  pose [ 7.931 -3.367 0 0 ] )
 charge_station(  pose [ 7.931 -4.444 0 0 ] )
 
-autorob( pose [5.418 7.478 0 -163.478] joules 300000 )
+#autorob( pose [5.911 3.811 0 -132.316] joules 300000 )
+#autorob( pose [5.060 7.026 0 -81.113] joules 100000 )
+autorob( pose [4.151 5.366 0 54.601] joules 50000 )
+autorob( pose [5.425 5.020 0 21.474] joules 1 )
 
-define medbot pioneer2dx_base
-(		 
- size [0.7 0.38 0.4] 				# double the length
- origin [-0.25 0.0 0.0]
- color "salmon1"	 
+define medbot pioneer2dx
+(
+ size [0.650 0.350 0.400] 				# double the length
 
- mass 30.0 
- 
+ color "salmon1"
+
+ mass 30.0
+
  sicklaser(samples 16 range_max 8 laser_return 2 watts 30 )
  ctrl "medbot"
- joules 100000 
- joules_capacity 800000 
- 
+ joules 100000
+ joules_capacity 500000
+
  fiducial_return 911
 
- gripper( pose [0.18 0 -0.440 0]  
-          take_watts 1000.0 
+ gripper( pose [0.380 0 -0.400 0]
+          take_watts 1000.0
           fiducial( range 3 )
 		  obstacle_return 0
         )
 )
 
-medbot( pose [6 7 0 0] joules 300000 ) 
+medbot( pose [-4.999 -6.446 0 -89.758] joules 500000 )
+#medbot( pose [-3.706 -6.386 0 -90.465] joules 500000 )
+
+
+define medical_charge_station model
+(
+  size [ 0.100 0.300 0.100 ]
+  color "maroon2"
+
+  # side blocks to restrict view angle
+  model( color "maroon2" size [0.100 0.050 0.250] pose [ 0 0.100 0 0 ] )
+  model( color "maroon2" size [0.100 0.050 0.250] pose [ 0 -0.100 0 0 ] )
+
+  # the charging block
+  model(
+	pose [ 0.010 0 0 0 ]
+	color "cyan1"
+	size [ 0.050 0.200 0.100 ]
+	joules -1  # provides infinite energy
+	give_watts 100000
+	fiducial_return 9110 # look for this in the fiducial sensor
+   )
+)
+
+medical_charge_station(  pose [ -3.679 -7.953 0 -90.000 ] )
+medical_charge_station(  pose [ -4.924 -7.953 0 -90.000 ] )
+
