@@ -23,6 +23,7 @@ private:
     bool at_dest;
 
     Job* myjob;
+    bool patient_onboard;
 
     bool patient_ahead;
     double patient_bearing;
@@ -97,6 +98,7 @@ public:
         robots_table = pos->GetWorld()->robots_table;
         jobs = pos->GetWorld()->jobs;
 
+        patient_onboard = false;
         parked = false;
         myjob = NULL;
     }
@@ -106,16 +108,14 @@ public:
         // close the grippers so they can be pushed into the charger
         ModelGripper::config_t gripper_data = gripper->GetConfig();
 
-        if ( gripper_data.paddles != ModelGripper::PADDLE_CLOSED )
-            gripper->CommandClose();
-        else  if ( gripper_data.lift != ModelGripper::LIFT_UP )
+        if ( gripper_data.lift != ModelGripper::LIFT_UP )
             gripper->CommandUp();
 
         if ( patient_ahead )
         {
             double a_goal = normalize( patient_bearing );
 
-            if ( patient_range > 1 )
+            if ( patient_range > 0.5 )
             {
                 if ( !ObstacleAvoid() )
                 {
@@ -125,13 +125,19 @@ public:
             }
             else
             {
+                printf("%f\n", patient_range);
+
                 pos->SetTurnSpeed( a_goal );
                 pos->SetXSpeed( 0.02 );	// creep towards it
 
-                if ( patient_range < 0.26 ) // close enough
+                if ( patient_range < 0.3 ) // close enough
+                {
                     pos->Stop();
+                    mode = MODE_LOAD;
 
-                printf("range = %f \n", patient_range);
+                    if ( gripper_data.paddles != ModelGripper::PADDLE_CLOSED )
+                        gripper->CommandClose();
+                }
 
                 if ( pos->Stalled() ) // touching
                     pos->SetXSpeed( -0.01 ); // back off a bit
@@ -144,13 +150,37 @@ public:
             pos->Stop();
             mode = MODE_RESCUE;
         }
+    }
 
-        // if the battery is charged, go back to work
-        if ( Full() )
-        {
-            //printf( "fully charged, now back to work\n" );
-            mode = MODE_UNDOCK;
+    /* Load the patient into the ambulance */
+    void Load()
+    {
+        Pose p = myjob->location->GetPose();
+
+        if(p.z < 0.6 && !pos->IsRelated(myjob->location)){
+
+            // Just for show
+            myjob->location->AddToPose(0, 0, 0.01, 0);
+
+        }else{
+
+            // reposition robot block
+            myjob->location->AddToPose(-p.x, -p.y, -p.z, 0);
+            pos->BecomeParentOf(myjob->location);
+
+            patient_onboard = true;
+            mode = MODE_HOSPITAL;
         }
+    }
+
+    void UnLoad()
+    {
+
+    }
+
+    void FindHospital()
+    {
+
     }
 
     void Dock()
@@ -484,12 +514,7 @@ public:
             double y1 = pose.y + 8;
             double x2 = dead_body.x + 8;
             double y2 = dead_body.y + 8;
-
-            //printf("x1 = %d, y1 = %d    -    x2 = %d, y2 = %d\n", (int)x1, (int)y1, (int)x2, (int)y2);
-
             double a_goal = -atan2(x1 - x2, y1 - y2) - (dtor(90));
-
-            printf("a_goal = %f \n", rtod(a_goal));
 
             double a_error = normalize( a_goal - pose.a );
 
@@ -540,6 +565,14 @@ public:
 
             case MODE_APPROCHE:
                 robot->Approche();
+                break;
+
+            case MODE_LOAD:
+                robot->Load();
+                break;
+
+            case MODE_HOSPITAL:
+                robot->FindHospital();
                 break;
 
             default:
@@ -622,6 +655,7 @@ public:
     static int FiducialUpdate( ModelFiducial* mod, MedRobot* robot )
     {
         robot->charger_ahoy = false;
+        robot->patient_ahead = false;
 
         for ( unsigned int i = 0; i < mod->fiducial_count; i++ )
         {

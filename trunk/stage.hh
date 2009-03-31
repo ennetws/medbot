@@ -2675,6 +2675,7 @@ namespace Stg
 	 Pose est_pose; ///< position estimate in local coordinates
 	 Pose est_pose_error; ///< estimated error in position estimate
 	 Pose est_origin; ///< global origin of the local coordinate system
+
   };
 
 
