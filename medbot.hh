@@ -43,7 +43,10 @@ typedef enum
     MODE_UNDOCK,
     MODE_DEAD,
     MODE_RESCUE,
-    MODE_APPROCHE
+    MODE_APPROCHE,
+    MODE_LOAD,
+    MODE_UNLOAD,
+    MODE_HOSPITAL
 } nav_mode_t;
 
 GQueue *jobs;
