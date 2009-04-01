@@ -166,10 +166,18 @@ public:
 
             // reposition robot block
             myjob->location->AddToPose(-p.x, -p.y, -p.z, 0);
+            myjob->location->Disable();
+
             pos->BecomeParentOf(myjob->location);
+            myjob->location->AddToPose(0, 0, 0.2, 0);
 
             patient_onboard = true;
             mode = MODE_HOSPITAL;
+
+            // For show
+            ModelGripper::config_t gripper_data = gripper->GetConfig();
+            if ( gripper_data.paddles != ModelGripper::PADDLE_OPEN )
+                gripper->CommandOpen();
         }
     }
 
@@ -180,7 +188,55 @@ public:
 
     void FindHospital()
     {
+        if ( ! ObstacleAvoid() )
+        {
+            if ( Dead() )
+            {
+                mode = MODE_DEAD;
+                return;
+            }
 
+            if ( verbose ) puts( "Going to the Hospital" );
+
+            ModelGripper::config_t gdata = gripper->GetConfig();
+
+            //avoidcount = 0;
+            pos->SetXSpeed( cruisespeed );
+
+            Pose pose = pos->GetPose();
+
+            int x = (pose.x + 8) / 4;
+            int y = (pose.y + 8) / 4;
+
+            if ( x > 3 ) x = 3;
+            if ( y > 3 ) y = 3;
+            if ( x < 0 ) x = 0;
+            if ( y < 0 ) y = 0;
+
+            double a_goal = dtor( hospital[y][x] );
+
+            if ( Hungry() )
+            {
+
+            }
+            else
+            {
+                if ( ! at_dest )
+                {
+                    if ( gdata.beam[0] ) // inner break beam broken
+                        gripper->CommandClose();
+                }
+            }
+
+            assert( ! isnan(a_goal ) );
+            assert( ! isnan(pose.a ) );
+
+            double a_error = normalize( a_goal - pose.a );
+
+            assert( ! isnan(a_error) );
+
+            pos->SetTurnSpeed(  a_error );
+        }
     }
 
     void Dock()
@@ -726,6 +782,4 @@ extern "C" int Init( Model* mod )
 
     return 0; //ok
 }
-
-
 
