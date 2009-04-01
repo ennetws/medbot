@@ -27,7 +27,7 @@
  *  Desc: External header file for the Stage library
  *  Author: Richard Vaughan (vaughan@sfu.ca)
  *  Date: 1 June 2003
- *  SVN: $Id$
+ *  SVN: $Id: stage.hh 7567 2009-03-31 17:07:29Z rtv $
  */
 
 #include <unistd.h>
@@ -280,7 +280,8 @@ namespace Stg
 				  prefix, x,y,z,a );
     }
 
-	 bool IsZero(){ return( !(x || y || z || a )); };
+	 /* returns true iff all components of the velocity are zero. */
+	 bool IsZero() const { return( !(x || y || z || a )); };
 
 	 void Load( Worldfile* wf, int section, const char* keyword );
 	 void Save( Worldfile* wf, int section, const char* keyword );
@@ -467,10 +468,18 @@ namespace Stg
 	 void draw_grid( stg_bounds3d_t vol );
 	 /** Render a string at [x,y,z] in the current color */
 	 void draw_string( float x, float y, float z, const char *string);
+	 void draw_string_multiline( float x, float y, float w, float h,
+										  const char *string, Fl_Align align );
 	 void draw_speech_bubble( float x, float y, float z, const char* str );
 	 void draw_octagon( float w, float h, float m );
+	 void draw_octagon( float x, float y, float w, float h, float m );
 	 void draw_vector( double x, double y, double z );
 	 void draw_origin( double len );
+	 void draw_array( float x, float y, float w, float h,
+							float* data, size_t len, size_t offset,
+							float min, float max );
+	 void draw_array( float x, float y, float w, float h,
+							float* data, size_t len, size_t offset );
 	 /** Draws a rectangle with center at x,y, with sides of length dx,dy */
 	 void draw_centered_rect( float x, float y, float dx, float dy );
   }
@@ -590,11 +599,11 @@ namespace Stg
   /** Report an error, with a standard, friendly message header */
   void stg_print_err( const char* err );
   /** Print human-readable geometry on stdout */
-  void stg_print_geom( Geom* geom );
+  void stg_print_geom( const Geom& geom );
   /** Print human-readable pose on stdout */
-  void stg_print_pose( Pose* pose );
+  void stg_print_pose( const Pose& pose );
   /** Print human-readable velocity on stdout */
-  void stg_print_velocity( Velocity* vel );
+  void stg_print_velocity( const Velocity& vel );
 
   /** A model creator function. Each model type must define a function of this type. */
   typedef Model* (*stg_creator_t)( World*, Model* );
@@ -623,6 +632,26 @@ namespace Stg
 
     Flag( stg_color_t color, double size );
     Flag* Nibble( double portion );
+  };
+
+  /** Abstract class for adding visualizations to models. DataVisualize must be overloaded, and is then called in the models local coord system */
+  class Visualizer {
+  private:
+	 const std::string menu_name;
+	 const std::string worldfile_name;
+
+  public:
+	 Visualizer( const std::string& menu_name,
+					 const std::string& worldfile_name )
+		: menu_name( menu_name ),
+		  worldfile_name( worldfile_name )
+	 { }
+
+	 virtual ~Visualizer( void ) { }
+	 virtual void Visualize( Model* mod, Camera* cam ) = 0;
+
+	 const std::string& GetMenuName() { return menu_name; }
+	 const std::string& GetWorldfileName() { return worldfile_name; }
   };
 
 
@@ -835,13 +864,13 @@ namespace Stg
     stg_usec_t quit_time;
     stg_usec_t real_time_now; ///< The current real time in microseconds
     stg_usec_t real_time_start; ///< the real time at which this world was created
-    GMutex* thread_mutex;
-    GThreadPool *threadpool;
+    GMutex* thread_mutex; ///< protect the worker thread management stuff
+    GThreadPool *threadpool; ///<worker threads for updating some sensor models in parallel
     int total_subs; ///< the total number of subscriptions to all models
     unsigned int update_jobs_pending;
     GList* velocity_list; ///< Models with non-zero velocity and should have their poses updated
-    unsigned int worker_threads;
-    GCond* worker_threads_done;
+    unsigned int worker_threads; ///< the number of worker threads to use
+    GCond* worker_threads_done; ///< signalled when there are no more updates for the worker threads to do
 
   protected:
 
@@ -851,7 +880,7 @@ namespace Stg
 	 GHashTable* option_table; ///< GUI options (toggles) registered by models
 	 GList* powerpack_list; ///< List of all the powerpacks attached to models in the world
     GList* ray_list;///< List of rays traced for debug visualization
-    stg_usec_t sim_time; ///< the current sim time in this world in ms
+    stg_usec_t sim_time; ///< the current sim time in this world in microseconds
     GHashTable* superregions;
     SuperRegion* sr_cached; ///< The last superregion looked up by this world
     // GList* update_list; ///< Models that have a subscriber or controller, and need to be updated
@@ -874,6 +903,8 @@ namespace Stg
     void LoadBlock( Worldfile* wf, int entity, GHashTable* entitytable );
     void LoadBlockGroup( Worldfile* wf, int entity, GHashTable* entitytable );
     void LoadPuck( Worldfile* wf, int entity, GHashTable* entitytable );
+
+	 virtual Model* RecentlySelectedModel(){ return NULL; }
 
     SuperRegion* AddSuperRegion( const stg_point_int_t& coord );
     SuperRegion* GetSuperRegion( const stg_point_int_t& coord );
@@ -973,7 +1004,7 @@ namespace Stg
 
     Worldfile* GetWorldFile(){ return wf; };
 
-    inline virtual bool IsGUI() { return false; }
+    virtual bool IsGUI() { return false; }
 
     virtual void Load( const char* worldfile_path );
     virtual void UnLoad();
@@ -987,7 +1018,7 @@ namespace Stg
     void CancelQuit(){ quit = false; }
     void CancelQuitAll(){ quit_all = false; }
 
-	 void TryCharge( PowerPack* pp, Pose pose );
+	 void TryCharge( PowerPack* pp, const Pose& pose );
 
     /** Get the resolution in pixels-per-metre of the underlying
 		  discrete raytracing model */
@@ -1003,14 +1034,15 @@ namespace Stg
     /** Return the number of times the world has been updated. */
     long unsigned int GetUpdateCount() { return updates; }
 
-	/// Register an Option for pickup by the GUI
-	void RegisterOption( Option* opt );
+	 /// Register an Option for pickup by the GUI
+	 void RegisterOption( Option* opt );
 
-	/** Table of all robots */
-	GHashTable* robots_table;
+    // Ibraheem's addition
+    /** Table of all robots */
+        GHashTable* robots_table;
 
     /** Job queue */
-	GQueue* jobs;
+        GQueue* jobs;
   };
 
   class Block
@@ -1205,12 +1237,12 @@ namespace Stg
     virtual void Draw( void ) const = 0;
     virtual void SetProjection( void ) const = 0;
 
-    inline float yaw( void ) const { return _yaw; }
-    inline float pitch( void ) const { return _pitch; }
+	 float yaw( void ) const { return _yaw; }
+	 float pitch( void ) const { return _pitch; }
 
-    inline float x( void ) const { return _x; }
-    inline float y( void ) const { return _y; }
-    inline float z( void ) const { return _z; }
+	 float x( void ) const { return _x; }
+	 float y( void ) const { return _y; }
+	 float z( void ) const { return _z; }
 
     virtual void reset() = 0;
     virtual void Load( Worldfile* wf, int sec ) = 0;
@@ -1239,34 +1271,34 @@ namespace Stg
     void strafe( float amount );
     void forward( float amount );
 
-    inline void setPose( float x, float y, float z ) { _x = x; _y = y; _z = z; }
-    inline void addPose( float x, float y, float z ) { _x += x; _y += y; _z += z; if( _z < 0.1 ) _z = 0.1; }
+     void setPose( float x, float y, float z ) { _x = x; _y = y; _z = z; }
+     void addPose( float x, float y, float z ) { _x += x; _y += y; _z += z; if( _z < 0.1 ) _z = 0.1; }
     void move( float x, float y, float z );
-    inline void setFov( float horiz_fov, float vert_fov ) { _horiz_fov = horiz_fov; _vert_fov = vert_fov; }
+     void setFov( float horiz_fov, float vert_fov ) { _horiz_fov = horiz_fov; _vert_fov = vert_fov; }
     ///update vertical fov based on window aspect and current horizontal fov
-    inline void setAspect( float aspect ) {
+     void setAspect( float aspect ) {
       //std::cout << "aspect: " << aspect << " vert: " << _vert_fov << " => " << aspect * _vert_fov << std::endl;
       //_vert_fov = aspect / _horiz_fov;
       _aspect = aspect;
     }
-    inline void setYaw( float yaw ) { _yaw = yaw; }
-    inline float horizFov( void ) const { return _horiz_fov; }
-    inline float vertFov( void ) const { return _vert_fov; }
-    inline void addYaw( float yaw ) { _yaw += yaw; }
-    inline void setPitch( float pitch ) { _pitch = pitch; }
-    inline void addPitch( float pitch ) { _pitch += pitch; if( _pitch < 0 ) _pitch = 0; else if( _pitch > 180 ) _pitch = 180; }
+     void setYaw( float yaw ) { _yaw = yaw; }
+     float horizFov( void ) const { return _horiz_fov; }
+     float vertFov( void ) const { return _vert_fov; }
+     void addYaw( float yaw ) { _yaw += yaw; }
+     void setPitch( float pitch ) { _pitch = pitch; }
+     void addPitch( float pitch ) { _pitch += pitch; if( _pitch < 0 ) _pitch = 0; else if( _pitch > 180 ) _pitch = 180; }
 
-    inline float realDistance( float z_buf_val ) const {
+     float realDistance( float z_buf_val ) const {
       //formula found at http://www.cs.unc.edu/~hoff/techrep/openglz.html
       //Z = Zn*Zf / (Zf - z*(Zf-Zn))
       return _z_near * _z_far / ( _z_far - z_buf_val * ( _z_far - _z_near ) );
     }
-    inline void scroll( float dy ) { _z += dy; }
-    inline float nearClip( void ) const { return _z_near; }
-    inline float farClip( void ) const { return _z_far; }
-    inline void setClip( float near, float far ) { _z_far = far; _z_near = near; }
+     void scroll( float dy ) { _z += dy; }
+     float nearClip( void ) const { return _z_near; }
+     float farClip( void ) const { return _z_far; }
+     void setClip( float near, float far ) { _z_far = far; _z_near = near; }
 
-    inline void reset() { setPitch( 70 ); setYaw( 0 ); }
+     void reset() { setPitch( 70 ); setYaw( 0 ); }
 
     void Load( Worldfile* wf, int sec );
     void Save( Worldfile* wf, int sec );
@@ -1288,10 +1320,10 @@ namespace Stg
     virtual void SetProjection( void ) const;
 
     void move( float x, float y );
-    inline void setYaw( float yaw ) { _yaw = yaw;	}
-    inline void setPitch( float pitch ) { _pitch = pitch; }
-    inline void addYaw( float yaw ) { _yaw += yaw;	}
-    inline void addPitch( float pitch ) {
+     void setYaw( float yaw ) { _yaw = yaw;	}
+     void setPitch( float pitch ) { _pitch = pitch; }
+     void addYaw( float yaw ) { _yaw += yaw;	}
+     void addPitch( float pitch ) {
       _pitch += pitch;
       if( _pitch > 90 )
 		  _pitch = 90;
@@ -1299,13 +1331,13 @@ namespace Stg
 		  _pitch = 0;
     }
 
-    inline void setScale( float scale ) { _scale = scale; }
-    inline void setPose( float x, float y) { _x = x; _y = y; }
+     void setScale( float scale ) { _scale = scale; }
+     void setPose( float x, float y) { _x = x; _y = y; }
 
     void scale( float scale, float shift_x = 0, float h = 0, float shift_y = 0, float w = 0 );
-    inline void reset( void ) { _pitch = _yaw = 0; }
+     void reset( void ) { _pitch = _yaw = 0; }
 
-    inline float scale() const { return _scale; }
+     float scale() const { return _scale; }
 
     void Load( Worldfile* wf, int sec );
     void Save( Worldfile* wf, int sec );
@@ -1360,6 +1392,7 @@ namespace Stg
 
     virtual void AddModel( Model* mod );
 
+
   protected:
     virtual void PushColor( stg_color_t col );
     virtual void PushColor( double r, double g, double b, double a );
@@ -1368,20 +1401,19 @@ namespace Stg
     void DrawTree( bool leaves );
     void DrawFloor();
 
-    Canvas* GetCanvas( void ) { return canvas; }
-
   public:
 
     WorldGui(int W,int H,const char*L=0);
     ~WorldGui();
 
     virtual bool Update();
-
     virtual void Load( const char* filename );
     virtual void UnLoad();
     virtual bool Save( const char* filename );
 
-    inline virtual bool IsGUI() { return true; }
+    virtual bool IsGUI() { return true; }
+
+	 virtual Model* RecentlySelectedModel();
 
     void DrawBoundingBoxTree();
 
@@ -1390,12 +1422,17 @@ namespace Stg
     void TogglePause(){ paused = !paused; };
 	 bool Paused(){ return( paused ); };
 
+    Canvas* GetCanvas( void ) { return canvas; }
+
     /** show the window - need to call this if you don't Load(). */
     void Show();
 
     /** Get human readable string that describes the current simulation
 		  time. */
     std::string ClockString( void );
+
+    /** Get human readable string that describes the current global energy state. */
+    std::string EnergyString( void );
 
     /** Set the minimum real time interval between world updates, in
 		  microeconds. */
@@ -1406,12 +1443,61 @@ namespace Stg
   };
 
 
+  class StripPlotVis : public Visualizer
+  {
+  private:
+
+	 Model* mod;
+	 float* data;
+	 size_t len;
+	 size_t count;
+	 unsigned int index;
+	 float x,y,w,h,min,max;
+	 stg_color_t fgcolor, bgcolor;
+
+  public:
+	 StripPlotVis( float x, float y, float w, float h,
+						size_t len,
+						stg_color_t fgcolor, stg_color_t bgcolor,
+						const char* name, const char* wfname );
+	 virtual ~StripPlotVis();
+	 virtual void Visualize( Model* mod, Camera* cam );
+	 void AppendValue( float value );
+  };
+
   /** energy data packet */
   class PowerPack
   {
-  public:
-	 PowerPack( Model* mod );
-	 ~PowerPack();
+	 friend class WorldGui;
+	 friend class Canvas;
+
+  protected:
+
+	 class DissipationVis : public Visualizer
+	 {
+	 private:
+		unsigned int columns, rows;
+		stg_meters_t width, height;
+		stg_joules_t* cells;
+		stg_joules_t peak_value;
+		double cellsize;
+
+		static stg_joules_t global_peak_value;
+
+	 public:
+		DissipationVis( stg_meters_t width,
+							 stg_meters_t height,
+							 stg_meters_t cellsize );
+
+		virtual ~DissipationVis();
+		virtual void Visualize( Model* mod, Camera* cam );
+
+		void Accumulate( stg_meters_t x, stg_meters_t y, stg_joules_t amount );
+	 };
+
+	 DissipationVis event_vis;
+	 StripPlotVis output_vis;
+	 StripPlotVis stored_vis;
 
 	 /** The model that owns this object */
 	 Model* mod;
@@ -1425,15 +1511,30 @@ namespace Stg
 	 /** TRUE iff the device is receiving energy */
 	 bool charging;
 
+	 /** Energy dissipated */
+	 stg_joules_t dissipated;
+
+	 static stg_joules_t global_stored;
+	 static stg_joules_t global_capacity;
+	 static stg_joules_t global_dissipated;
+	 static stg_joules_t global_input;
+	 static stg_watts_t global_power;
+	 static stg_watts_t global_power_smoothed;
+	 static double global_smoothing_constant;
+
+  public:
+	 PowerPack( Model* mod );
+	 ~PowerPack();
+
 	 /** OpenGL visualization of the powerpack state */
-	 void Visualize( Camera* cam );
+	 void Visualize( Camera* cam ) const;
 
 	 /** Print human-readable status on stdout, prefixed with the
 		  argument string */
-	 void Print( char* prefix );
+	 void Print( char* prefix ) const;
 
 	 /** Returns the energy capacity minus the current amount stored */
-	 stg_joules_t RemainingCapacity();
+	 stg_joules_t RemainingCapacity() const;
 
 	 /** Add to the energy store */
 	 void Add( stg_joules_t j );
@@ -1444,11 +1545,29 @@ namespace Stg
 	 /** Transfer some stored energy to another power pack */
 	 void TransferTo( PowerPack* dest, stg_joules_t amount );
 
-	 double ProportionRemaining()
+	 double ProportionRemaining() const
 	 { return( stored / capacity ); }
 
-	 void Print( const char* prefix )
+	 void Print( const char* prefix ) const
 	 { printf( "%s PowerPack %.2f/%.2f J\n", prefix, stored, capacity ); }
+
+	 stg_joules_t GetStored() const;
+	 stg_joules_t GetCapacity() const;
+	 stg_joules_t GetDissipated() const;
+	 void SetCapacity( stg_joules_t j );
+	 void SetStored( stg_joules_t j );
+
+	 /** Returns true iff the device received energy at the last timestep */
+	 bool GetCharging() const { return charging; }
+
+	 void ChargeStart(){ charging = true; }
+	 void ChargeStop(){ charging = false; }
+
+	 /** Lose energy as work or heat */
+	 void Dissipate( stg_joules_t j );
+
+	 /** Lose energy as work or heat, and record the event */
+	 void Dissipate( stg_joules_t j, const Pose& p );
 };
 
   class Visibility
@@ -1466,14 +1585,6 @@ namespace Stg
 	 void Load( Worldfile* wf, int wf_entity );
   };
 
-  /** Abstract class for adding visualizations to models. DataVisualize must be overloaded, and is then called in the models local coord system */
-  class CustomVisualizer {
-  public:
-	 //TODO allow user to specify name - which will show up in display filter
-	 virtual ~CustomVisualizer( void ) { }
-	 virtual void DataVisualize( Camera* cam ) = 0;
-	 virtual const std::string& name() = 0; //must return a name for visualization (careful not to return stack-memory)
-  };
 
 
   /* Hooks for attaching special callback functions (not used as
@@ -1481,11 +1592,13 @@ namespace Stg
   class CallbackHooks
   {
   public:
-	 char load;
-	 char save;
-	 char shutdown;
-	 char startup;
-	 char update;
+	 int flag_incr;
+	 int flag_decr;
+	 int load;
+	 int save;
+	 int shutdown;
+	 int startup;
+	 int update;
   };
 
   /** Records model state and functionality in the GUI, if used */
@@ -1618,6 +1731,7 @@ namespace Stg
 
 	 Visibility vis;
 
+	 stg_usec_t GetSimInterval(){ return world->interval_sim; }
 
 	 void Lock()
 	 {
@@ -1669,7 +1783,7 @@ namespace Stg
 	 void MapWithChildren();
 	 void UnMapWithChildren();
 
-	 int TreeToPtrArray( GPtrArray* array );
+	 int TreeToPtrArray( GPtrArray* array ) const;
 
 	 /** raytraces a single ray from the point and heading identified by
 		  pose, in local coords */
@@ -1722,7 +1836,7 @@ namespace Stg
 
 	 Model* ConditionalMove( Pose newpose );
 
-	 stg_meters_t ModelHeight();
+	 stg_meters_t ModelHeight() const;
 
 	 bool UpdateDue( void );
 	 void UpdateIfDue();
@@ -1765,6 +1879,13 @@ namespace Stg
 
 	 void DataVisualizeTree( Camera* cam );
 
+	 void DrawFlagList();
+
+	 void DrawPose( Pose pose );
+
+	 void LoadDataBaseEntries( Worldfile* wf, int entity );
+
+  public:
 	 virtual void PushColor( stg_color_t col )
 	 { world->PushColor( col ); }
 
@@ -1773,12 +1894,8 @@ namespace Stg
 
 	 virtual void PopColor(){ world->PopColor(); }
 
-	 void DrawFlagList();
 
-	 void DrawPose( Pose pose );
-
-  public:
-	 PowerPack* FindPowerPack();
+	 PowerPack* FindPowerPack() const;
 
 	 void RecordRenderPoint( GSList** head, GSList* link,
 									 unsigned int* c1, unsigned int* c2 );
@@ -1801,10 +1918,10 @@ namespace Stg
 	 void Say( const char* str );
 
 	 /** Attach a user supplied visualization to a model. */
-	 void AddCustomVisualizer( CustomVisualizer* custom_visual );
+	 void AddVisualizer( Visualizer* custom_visual, bool on_by_default );
 
 	 /** remove user supplied visualization to a model - supply the same ptr passed to AddCustomVisualizer */
-	 void RemoveCustomVisualizer( CustomVisualizer* custom_visual );
+	 void RemoveVisualizer( Visualizer* custom_visual );
 
 	 void BecomeParentOf( Model* child );
 
@@ -1836,7 +1953,7 @@ namespace Stg
 	 void PushFlag( Flag* flag );
 	 Flag* PopFlag();
 
-	 int GetFlagCount(){ return g_list_length( flag_list ); }
+	 int GetFlagCount() const { return g_list_length( flag_list ); }
 
 	 /** Add a pointer to a blinkenlight to the model. */
 	 void AddBlinkenlight( stg_blinkenlight_t* b )
@@ -1880,33 +1997,33 @@ namespace Stg
 
 	 /** Returns a pointer to this model's parent model, or NULL if this
 		  model has no parent */
-	 Model* Parent(){ return this->parent; }
+	 Model* Parent() const { return this->parent; }
 
-	 Model* GetModel( const char* name );
+	 Model* GetModel( const char* name ) const;
 	 //int GuiMask(){ return this->gui_mask; };
 
 	 /** Returns a pointer to the world that contains this model */
-	 World* GetWorld(){ return this->world; }
+	 World* GetWorld() const { return this->world; }
 
 	 /** return the root model of the tree containing this model */
 	 Model* Root(){ return(  parent ? parent->Root() : this ); }
 
-	 bool IsAntecedent( Model* testmod );
+	 bool IsAntecedent( const Model* testmod ) const;
 
 	 /** returns true if model [testmod] is a descendent of this model */
-	 bool IsDescendent( Model* testmod );
+	 bool IsDescendent( const Model* testmod ) const;
 
 	 /** returns true if model [testmod] is a descendent or antecedent of this model */
-	 bool IsRelated( Model* testmod );
+	 bool IsRelated( const Model* testmod ) const;
 
 	 /** get the pose of a model in the global CS */
-	 Pose GetGlobalPose();
+	 Pose GetGlobalPose() const;
 
 	 /** get the velocity of a model in the global CS */
-	 Velocity GetGlobalVelocity();
+	 Velocity GetGlobalVelocity()  const;
 
 	 /* set the velocity of a model in the global coordinate system */
-	 void SetGlobalVelocity(  Velocity gvel );
+	 void SetGlobalVelocity( const Velocity& gvel );
 
 	 /** subscribe to a model's data */
 	 void Subscribe();
@@ -1915,54 +2032,55 @@ namespace Stg
 	 void Unsubscribe();
 
 	 /** set the pose of model in global coordinates */
-	 void SetGlobalPose(  Pose gpose );
+	 void SetGlobalPose(  const Pose& gpose );
 
 	 /** set a model's velocity in its parent's coordinate system */
-	 void SetVelocity(  Velocity vel );
+	 void SetVelocity(  const Velocity& vel );
 
 	 /** set a model's pose in its parent's coordinate system */
-	 void SetPose(  Pose pose );
+	 void SetPose(  const Pose& pose );
 
 	 /** add values to a model's pose in its parent's coordinate system */
-	 void AddToPose(  Pose pose );
+	 void AddToPose(  const Pose& pose );
 
 	 /** add values to a model's pose in its parent's coordinate system */
 	 void AddToPose(  double dx, double dy, double dz, double da );
 
 	 /** set a model's geometry (size and center offsets) */
-	 void SetGeom(  Geom src );
+	 void SetGeom(  const Geom& src );
 
 	 /** Set a model's fiducial return value. Values less than zero
 		  are not detected by the fiducial sensor. */
 	 void SetFiducialReturn(  int fid );
 
 	 /** Get a model's fiducial return value. */
-	 int GetFiducialReturn()
-	 { return vis.fiducial_return; }
+	 int GetFiducialReturn()  const { return vis.fiducial_return; }
 
 	 /** set a model's fiducial key: only fiducial finders with a
 		  matching key can detect this model as a fiducial. */
 	 void SetFiducialKey(  int key );
 
-	 stg_color_t GetColor(){ return color; }
+	 stg_color_t GetColor() const { return color; }
 
 	 /** return a model's unique process-wide identifier */
-	 uint32_t GetId() { return id; }
+	 uint32_t GetId()  const { return id; }
 
 	 //  stg_laser_return_t GetLaserReturn(){ return laser_return; }
 
 	 /** Change a model's parent - experimental*/
 	 int SetParent( Model* newparent);
 
-	 /** Get a model's geometry - it's size and local pose (offset from
-		  origin in local coords) */
-	 Geom GetGeom(){ return geom; }
+	 /** Get (a copy of) the model's geometry - it's size and local
+		  pose (offset from origin in local coords). */
+	 Geom GetGeom() const { return geom; }
 
-	 /** Get the pose of a model in its parent's coordinate system  */
-	 Pose GetPose(){ return pose; }
+	 /** Get (a copy of) the pose of a model in its parent's coordinate
+		  system.  */
+	 Pose GetPose() const { return pose; }
 
-	 /** Get a model's velocity (in its local reference frame) */
-	 Velocity GetVelocity(){ return velocity; }
+	 /** Get (a copy of) the model's velocity in its local reference
+		  frame. */
+	 Velocity GetVelocity() const { return velocity; }
 
 	 // guess what these do?
 	 void SetColor( stg_color_t col );
@@ -1981,7 +2099,7 @@ namespace Stg
 	 void SetWatts( stg_watts_t watts );
 	 void SetMapResolution( stg_meters_t res );
 
-	 bool DataIsFresh(){ return this->data_fresh; }
+	 bool DataIsFresh() const { return this->data_fresh; }
 
 	 /* attach callback functions to data members. The function gets
 		 called when the member is changed using SetX() accessor method */
@@ -2023,20 +2141,29 @@ namespace Stg
 	 { RemoveCallback( &hooks.save, cb ); }
 
 	 void AddUpdateCallback( stg_model_callback_t cb, void* user )
-	 {
-		AddCallback( &hooks.update, cb, user );
-		//Subscribe(); // if attaching a callback here, assume we want updates to happen
-	 }
+	 {	AddCallback( &hooks.update, cb, user ); }
 
 	 void RemoveUpdateCallback( stg_model_callback_t cb )
-	 {
-		RemoveCallback( &hooks.update, cb );
-		//Unsubscribe();
-	 }
+	 {	RemoveCallback( &hooks.update, cb ); }
+
+	 void AddFlagIncrCallback( stg_model_callback_t cb, void* user )
+	 {	AddCallback( &hooks.flag_incr, cb, user ); }
+
+	 void RemoveFlagIncrCallback( stg_model_callback_t cb )
+	 {	RemoveCallback( &hooks.flag_incr, cb ); }
+
+	 void AddFlagDecrCallback( stg_model_callback_t cb, void* user )
+	 {	AddCallback( &hooks.flag_decr, cb, user ); }
+
+	 void RemoveFlagDecrCallback( stg_model_callback_t cb )
+	 {	RemoveCallback( &hooks.flag_decr, cb ); }
 
 	 /** named-property interface
 	  */
-	 void* GetProperty( char* key );
+	 void* GetProperty( const char* key ) const;
+	 bool GetPropertyFloat( const char* key, float* f, float defaultval ) const;
+	 bool GetPropertyInt( const char* key, int* i, int defaultval ) const;
+	 bool GetPropertyStr( const char* key, char** c, char* defaultval ) const;
 
 	 /** @brief Set a named property of a Stage model.
 
@@ -2068,28 +2195,31 @@ namespace Stg
 		  stg_model_set_<property>() function definition to see the type
 		  of data required for each property.
 	 */
-	 int SetProperty( char* key, void* data );
-	 void UnsetProperty( char* key );
+	 int SetProperty( const char* key, const void* data );
+	 void SetPropertyInt( const char* key, int i );
+	 void SetPropertyFloat( const char* key, float f );
+	 void SetPropertyStr( const char* key, const char* str );
 
-	 virtual void Print( char* prefix );
-	 virtual const char* PrintWithPose();
+	 void UnsetProperty( const char* key );
 
-	 /** Convert a pose in the world coordinate system into a model's
-		  local coordinate system. Overwrites [pose] with the new
-		  coordinate. */
-	 Pose GlobalToLocal( const Pose pose );
+	 virtual void Print( char* prefix ) const;
+	 virtual const char* PrintWithPose() const;
+
+	 /** Given a global pose, returns that pose in the model's local
+		  coordinate system. */
+	 Pose GlobalToLocal( const Pose& pose ) const;
 
 	 /** Return the global pose (i.e. pose in world coordinates) of a
 		  pose specified in the model's local coordinate system */
-	 Pose LocalToGlobal( const Pose pose );
+	 Pose LocalToGlobal( const Pose& pose ) const;
 
 	 /** Return the 3d point in world coordinates of a 3d point
 		  specified in the model's local coordinate system */
-	 stg_point3_t LocalToGlobal( const stg_point3_t local );
+	 stg_point3_t LocalToGlobal( const stg_point3_t local ) const;
 
 	 /** returns the first descendent of this model that is unsubscribed
 		  and has the type indicated by the string */
-	 Model* GetUnsubscribedModelOfType( const stg_model_type_t type );
+	 Model* GetUnsubscribedModelOfType( const stg_model_type_t type ) const;
 
 	 /** returns the first descendent of this model that is unused
 		  and has the type indicated by the string. This model is tagged as used. */
@@ -2097,7 +2227,7 @@ namespace Stg
 
 	 /** Returns the value of the model's stall boolean, which is true
 		  iff the model has crashed into another model */
-	 bool Stalled(){ return this->stall; }
+	 bool Stalled() const { return this->stall; }
   };
 
 
@@ -2186,10 +2316,28 @@ namespace Stg
 	 stg_usec_t interval;
   } stg_laser_cfg_t;
 
+
   /// %ModelLaser class
   class ModelLaser : public Model
   {
   private:
+
+	 class Vis : public Visualizer
+	 {
+	 private:
+		static Option showArea;
+		static Option showStrikes;
+		static Option showFov;
+		static Option showBeams;
+
+	 public:
+		Vis( World* world );
+		virtual ~Vis( void ){}
+		virtual void Visualize( Model* mod, Camera* cam );
+	 };
+
+	 Vis vis;
+
 	 /** OpenGL displaylist for laser data */
 	 int data_dl;
 	 bool data_dirty;
@@ -2199,31 +2347,6 @@ namespace Stg
 	 stg_meters_t range_max;
 	 stg_radians_t fov;
 	 uint32_t resolution;
-
-	 static Option showLaserData;
-	 static Option showLaserStrikes;
-	 static Option showLaserFov;
-	 static Option showLaserBeams;
-
-// 	 class LaserScanVis : public CustomVisualizer
-// 	 {
-// 	 public:
-// 		LaserScanVis( ModelLaser* laser ) :
-// 		  CustomVisualizer(),
-// 		  laser( laser )
-// 		{ /* nothing to do */ };
-
-// 		virtual void DataVisualize( Camera* cam );
-
-// 		// rtv - surely a static string member would be easier here?
-// 		//must return a name for visualization (careful not to return stack-memory)
-
-// 		virtual const std::string& name() { return "LaserScanVisName"; } ;
-
-// 	 private:
-// 		ModelLaser* laser;
-// 	 };
-
 
   public:
 	 static const char* typestr;
@@ -2239,7 +2362,6 @@ namespace Stg
 	 virtual void Update();
 	 virtual void Load();
 	 virtual void Print( char* prefix );
-	 virtual void DataVisualize( Camera* cam );
 
 	 uint32_t GetSampleCount(){ return sample_count; }
 
@@ -2260,14 +2382,6 @@ namespace Stg
   class ModelGripper : public Model
   {
   public:
-
-	//  class Viz : public CustomVisualizer
-// 	 {
-
-
-// 	 };
-
-// 	 static Viz viz;
 
 	 enum paddle_state_t {
 		PADDLE_OPEN = 0, // default state
@@ -2571,25 +2685,25 @@ namespace Stg
 	 virtual void DataVisualize( Camera* cam );
 
 	 ///width of captured image
-	 inline int getWidth( void ) const { return _width; }
+	  int getWidth( void ) const { return _width; }
 
 	 ///height of captured image
-	 inline int getHeight( void ) const { return _height; }
+	  int getHeight( void ) const { return _height; }
 
 	 ///get reference to camera used
-	 inline const PerspectiveCamera& getCamera( void ) const { return _camera; }
+	  const PerspectiveCamera& getCamera( void ) const { return _camera; }
 
 	 ///get a reference to camera depth buffer
-	 inline const GLfloat* FrameDepth() const { return _frame_data; }
+	  const GLfloat* FrameDepth() const { return _frame_data; }
 
 	 ///get a reference to camera color image. 3 bytes (RGB) per pixel
-	 inline const GLubyte* FrameColor() const { return _frame_color_data; }
+	  const GLubyte* FrameColor() const { return _frame_color_data; }
 
 	 ///change the pitch
-	 inline void setPitch( float pitch ) { _pitch_offset = pitch; _valid_vertexbuf_cache = false; }
+	  void setPitch( float pitch ) { _pitch_offset = pitch; _valid_vertexbuf_cache = false; }
 
 	 ///change the yaw
-	 inline void setYaw( float yaw ) { _yaw_offset = yaw; _valid_vertexbuf_cache = false; }
+	  void setYaw( float yaw ) { _yaw_offset = yaw; _valid_vertexbuf_cache = false; }
   };
 
   // POSITION MODEL --------------------------------------------------------
@@ -2675,7 +2789,6 @@ namespace Stg
 	 Pose est_pose; ///< position estimate in local coordinates
 	 Pose est_pose_error; ///< estimated error in position estimate
 	 Pose est_origin; ///< global origin of the local coordinate system
-
   };
 
 
@@ -2686,6 +2799,7 @@ namespace Stg
   public:
 	 ModelScooper( World* world, Model* parent );
   };
+
 
 }; // end namespace stg
 
