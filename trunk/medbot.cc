@@ -30,6 +30,11 @@ private:
     double patient_range;
     double patient_heading;
 
+    bool hospital_ahead;
+    double hospital_bearing;
+    double hospital_range;
+    double hospital_heading;
+
 public:
 
     int parked;
@@ -101,6 +106,8 @@ public:
         patient_onboard = false;
         parked = false;
         myjob = NULL;
+
+        printf("Medbot created (%d).\n", pos->GetId());
     }
 
     void Approche()
@@ -125,8 +132,6 @@ public:
             }
             else
             {
-                printf("%f\n", patient_range);
-
                 pos->SetTurnSpeed( a_goal );
                 pos->SetXSpeed( 0.02 );	// creep towards it
 
@@ -155,21 +160,21 @@ public:
     /* Load the patient into the ambulance */
     void Load()
     {
-        Pose p = myjob->location->GetPose();
+        Pose p = myjob->patient->GetPose();
 
-        if(p.z < 0.6 && !pos->IsRelated(myjob->location)){
+        if(p.z < 0.6 && !pos->IsRelated(myjob->patient)){
 
             // Just for show
-            myjob->location->AddToPose(0, 0, 0.01, 0);
+            myjob->patient->AddToPose(0, 0, 0.01, 0);
 
         }else{
 
             // reposition robot block
-            myjob->location->AddToPose(-p.x, -p.y, -p.z, 0);
-            myjob->location->Disable();
+            myjob->patient->AddToPose(-p.x, -p.y, -p.z, 0);
+            myjob->patient->Disable();
 
-            pos->BecomeParentOf(myjob->location);
-            myjob->location->AddToPose(0, 0, 0.2, 0);
+            pos->BecomeParentOf(myjob->patient);
+            myjob->patient->AddToPose(0, 0, 0.2, 0);
 
             patient_onboard = true;
             mode = MODE_HOSPITAL;
@@ -183,7 +188,58 @@ public:
 
     void UnLoad()
     {
+        // close the grippers so they can be pushed into the charger
+        ModelGripper::config_t gripper_data = gripper->GetConfig();
 
+        if ( hospital_ahead )
+        {
+            double a_goal = normalize( hospital_bearing );
+
+            //printf("Hospital: %f\n", hospital_range);
+
+            if ( hospital_range > 1.0 )
+            {
+                if ( !ObstacleAvoid() )
+                {
+                    pos->SetXSpeed( cruisespeed );
+                    pos->SetTurnSpeed( a_goal );
+                }
+            }
+            else
+            {
+                if( patient_onboard )
+                {
+                    // Stop moving
+                    pos->Stop();
+
+                    if(myjob->patient->Parent() == pos){
+                        pos->RemoveChild(myjob->patient);
+                        //pos->GetWorld()->AddChild(myjob->patient);
+                    }
+
+                    // Rotate patient on board
+                    Pose pose = myjob->patient->GetPose();
+                    myjob->patient->AddToPose(0,0,0, normalize( a_goal - pose.a ));
+
+                    // Lower down patient
+                    if(pose.z > 0)
+                        myjob->patient->AddToPose(0, 0, -0.01, 0);
+                    else
+                        patient_onboard = false;
+
+                }else{
+                    // back off
+
+                }
+
+            }
+        }
+        else
+        {
+            //printf( "docking but can't see a charger\n" );
+            pos->Stop();
+            mode = MODE_HOSPITAL;
+        }
     }
 
     void FindHospital()
@@ -196,7 +252,17 @@ public:
                 return;
             }
 
+            if ( Hungry() )
+            {
+                mode = MODE_IDLE;
+                return;
+            }
+
             if ( verbose ) puts( "Going to the Hospital" );
+
+            if ( hospital_ahead ){
+                mode = MODE_UNLOAD;
+            }
 
             ModelGripper::config_t gdata = gripper->GetConfig();
 
@@ -424,6 +490,8 @@ public:
         {
             if ( verbose ) puts( "Cruise" );
 
+            //printf("(%d) is an Idle robot.\n", pos->GetId());
+
             ModelGripper::config_t gdata = gripper->GetConfig();
 
             //avoidcount = 0;
@@ -445,10 +513,12 @@ public:
 			// Always be around Med-Charging station
 			double a_goal = dtor( refuel[y][x] );
 
+
+
             // if we are low on juice - find the direction to the recharger instead
             if ( Hungry() )
             {
-                //puts( "hungry - using refuel map" );
+                if ( verbose ) puts( "hungry - using refuel map" );
 
                 // use the refuel map
                 a_goal = dtor( refuel[y][x] );
@@ -457,6 +527,7 @@ public:
                     mode = MODE_DOCK;
 
                 parked = false;
+
             }
             else
             {
@@ -465,6 +536,8 @@ public:
                     if ( gdata.beam[0] ) // inner break beam broken
                         gripper->CommandClose();
                 }
+
+                printf("(%d)Checking for dead robots.\n", pos->GetId());
 
                 // Check for dead robots
                 for ( GList *current = g_hash_table_get_values (robots_table); current; current = g_list_next(current))
@@ -540,7 +613,8 @@ public:
         for (GList *current = list; current; current = g_list_next(current))
         {
             Job* job = (Job *)current->data;
-            if (job->location == modPos)
+
+            if (job->patient == modPos)
                 return job;
         }
 
@@ -564,7 +638,7 @@ public:
 
             Pose pose = pos->GetPose();
 
-            Pose dead_body = myjob->location->GetPose();
+            Pose dead_body = myjob->patient->GetPose();
 
             double x1 = pose.x + 8;
             double y1 = pose.y + 8;
@@ -629,6 +703,10 @@ public:
 
             case MODE_HOSPITAL:
                 robot->FindHospital();
+                break;
+
+            case MODE_UNLOAD:
+                robot->UnLoad();
                 break;
 
             default:
@@ -710,8 +788,10 @@ public:
 
     static int FiducialUpdate( ModelFiducial* mod, MedRobot* robot )
     {
+
         robot->charger_ahoy = false;
         robot->patient_ahead = false;
+        robot->hospital_ahead = false;
 
         for ( unsigned int i = 0; i < mod->fiducial_count; i++ )
         {
@@ -729,15 +809,22 @@ public:
                 robot->charger_heading = f->geom.a;
 
                 //printf( "charger at %.2f radians\n", robot->charger_bearing );
-                break;
             }
 
-            if ( f->id == (int)robot->myjob->location->GetId())   // I see the dead robot
+            if ( robot->myjob && robot->myjob->patient && f->id == (int)robot->myjob->patient->GetId())   // I see the dead robot
             {
                 robot->patient_ahead = true;
                 robot->patient_bearing = f->bearing;
                 robot->patient_range = f->range;
                 robot->patient_heading = f->geom.a;
+            }
+
+            if ( f->id == 2 ) // I see a charging station
+            {
+                robot->hospital_ahead = true;
+                robot->hospital_bearing = f->bearing;
+                robot->hospital_range = f->range;
+                robot->hospital_heading = f->geom.a;
             }
         }
 

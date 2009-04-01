@@ -54,13 +54,13 @@ GHashTable *robots_table;
 
 struct Job
 {
-    ModelPosition *location;
+    ModelPosition *patient;
     stg_usec_t timestamp;
     void *assignedTo;
 
     Job(ModelPosition *pos, void *agent)
     {
-        location = pos;
+        patient = pos;
         timestamp = pos->GetWorld()->SimTimeNow();
         assignedTo = agent;
     }
