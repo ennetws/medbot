@@ -22,7 +22,7 @@ window
 (
   size [ 600.000 650.000 ]
 
-  center [ -0.700 -0.556 ]
+  center [ -0.265 -0.379 ]
   rotate [ 0 0 ]
   scale 32.407
 
@@ -115,9 +115,9 @@ charge_station(  pose [ 7.931 -3.367 0 0 ] )
 charge_station(  pose [ 7.931 -4.444 0 0 ] )
 
 #autorob( pose [5.911 3.811 0 -132.316] joules 300000 )
-#autorob( pose [5.060 7.026 0 -81.113] joules 100000 )
-autorob( pose [4.151 5.366 0 54.601] joules 50000 )
-autorob( pose [5.425 5.020 0 21.474] joules 1 )
+autorob( pose [5.092 6.748 0 -86.089] joules 100000 )
+autorob( pose [4.397 5.432 0 -26.361] joules 50000 )
+autorob( pose [5.425 5.020 0 21.474] joules 1000 )
 
 define medbot pioneer2dx
 (
@@ -129,8 +129,8 @@ define medbot pioneer2dx
 
  sicklaser(samples 16 range_max 8 laser_return 2 watts 30 )
  ctrl "medbot"
- joules 100000
- joules_capacity 500000
+ joules 50000
+ joules_capacity 100000
 
  fiducial_return 911
 
@@ -141,8 +141,8 @@ define medbot pioneer2dx
         )
 )
 
-medbot( pose [-4.999 -6.446 0 -89.758] joules 500000 )
-#medbot( pose [-3.706 -6.386 0 -90.465] joules 500000 )
+medbot( pose [-3.520 -6.472 0 -89.758] joules 10000 )
+medbot( pose [-5.091 -6.394 0 -89.758] joules 80000 )
 
 
 define medical_charge_station model
