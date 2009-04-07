@@ -94,14 +94,17 @@ public:
             blobfinder->Subscribe();
         }
 
-        if (pos->GetWorld()->robots_table == NULL)
-            pos->GetWorld()->robots_table = g_hash_table_new( g_direct_hash, g_direct_equal );
+        // Make sure we have the table of fasr robots
+        if(!(robots_table = (GHashTable*) pos->GetWorld()->GetModel("cave")->GetProperty("robots_table"))){
+            robots_table = g_hash_table_new( g_direct_hash, g_direct_equal );
+            pos->GetWorld()->GetModel("cave")->SetProperty("robots_table", (void*) robots_table);
+        }
 
-        if (pos->GetWorld()->jobs == NULL)
-            pos->GetWorld()->jobs =  g_queue_new();
-
-        robots_table = pos->GetWorld()->robots_table;
-        jobs = pos->GetWorld()->jobs;
+        // Also, the jobs queue
+        if(!(jobs = (GQueue*) pos->GetWorld()->GetModel("cave")->GetProperty("jobs"))){
+            jobs =  g_queue_new();
+            pos->GetWorld()->GetModel("cave")->SetProperty("jobs", (void*) jobs);
+        }
 
         patient_onboard = false;
         parked = false;
@@ -122,7 +125,7 @@ public:
         {
             double a_goal = normalize( patient_bearing );
 
-            if ( patient_range > 0.5 )
+            if ( patient_range > 0.6 )
             {
                 if ( !ObstacleAvoid() )
                 {
@@ -135,7 +138,7 @@ public:
                 pos->SetTurnSpeed( a_goal );
                 pos->SetXSpeed( 0.02 );	// creep towards it
 
-                if ( patient_range < 0.3 ) // close enough
+                if ( patient_range < 0.5 ) // close enough
                 {
                     pos->Stop();
                     mode = MODE_LOAD;
@@ -168,15 +171,14 @@ public:
             myjob->patient->AddToPose(0, 0, 0.01, 0);
 
         }else{
-
             // reposition robot block
             myjob->patient->AddToPose(-p.x, -p.y, -p.z, 0);
-            myjob->patient->Disable();
 
-            pos->BecomeParentOf(myjob->patient);
+            myjob->patient->SetParent(pos);
+            patient_onboard = true;
+
             myjob->patient->AddToPose(0, 0, 0.2, 0);
 
-            patient_onboard = true;
             mode = MODE_HOSPITAL;
 
             // For show
@@ -197,7 +199,7 @@ public:
 
             //printf("Hospital: %f\n", hospital_range);
 
-            if ( hospital_range > 1.0 )
+            if ( hospital_range > 1.8 )
             {
                 if ( !ObstacleAvoid() )
                 {
@@ -207,43 +209,62 @@ public:
             }
             else
             {
-                if( patient_onboard )
+                uint32_t sample_count=0;
+                stg_laser_sample_t* scan = laser->GetSamples( &sample_count );
+
+                for (uint32_t i = 0; i < sample_count; i++)
                 {
-                    // Stop moving
-                    pos->Stop();
+                    if ( verbose ) printf( "%.3f ", scan[i].range );
 
-                    if(myjob->patient->Parent() == pos){
-                        pos->RemoveChild(myjob->patient);
-                        //pos->GetWorld()->AddChild(myjob->patient);
+                    if ( (i > (sample_count/4))
+                            && (i < (sample_count - (sample_count/4)))
+                            && scan[i].range < minfrontdistance)
+                    {
+                        printf("there is something in front of me!\n");
+                    }else{
+                        // Stop moving
+                        pos->Stop();
+
+                        // Get patient pose
+                        Pose pose = myjob->patient->GetPose();
+
+                        // Reset parent
+                        myjob->patient->SetParent(NULL);
+
+                        // Reposition patient on the floor
+                        myjob->patient->SetPose( pos->GetGlobalPose() );
+                        myjob->patient->AddToPose(0.7,0,0,0);
+
+                        // Override mode
+                        myjob->patient->SetPropertyInt("charging", 1);
+
+                        // Modify job queue
+                        ClearCurrentJob();
+                        return;
                     }
-
-                    // Rotate patient on board
-                    Pose pose = myjob->patient->GetPose();
-                    myjob->patient->AddToPose(0,0,0, normalize( a_goal - pose.a ));
-
-                    // Lower down patient
-                    if(pose.z > 0)
-                        myjob->patient->AddToPose(0, 0, -0.01, 0);
-                    else
-                        patient_onboard = false;
-
-                }else{
-                    // back off
-
                 }
-
             }
         }
         else
         {
-            //printf( "docking but can't see a charger\n" );
             pos->Stop();
             mode = MODE_HOSPITAL;
         }
     }
 
+    void ClearCurrentJob()
+    {
+        patient_onboard = false;
+        parked = false;
+        g_queue_remove(jobs, myjob);
+        myjob = NULL;
+        mode = MODE_IDLE;
+    }
+
     void FindHospital()
     {
+        //printf("Find Hospital Mode.\n");
+
         if ( ! ObstacleAvoid() )
         {
             if ( Dead() )
@@ -287,11 +308,7 @@ public:
             }
             else
             {
-                if ( ! at_dest )
-                {
-                    if ( gdata.beam[0] ) // inner break beam broken
-                        gripper->CommandClose();
-                }
+
             }
 
             assert( ! isnan(a_goal ) );
@@ -366,7 +383,7 @@ public:
     void UnDock()
     {
         const stg_meters_t gripper_distance = 0.2;
-        const stg_meters_t back_off_distance = 1.0;
+        const stg_meters_t back_off_distance = 0.3;
         const stg_meters_t back_off_speed = -0.01;
 
         // back up a bit
@@ -388,8 +405,13 @@ public:
         // if the gripper is down and open and we're away from the charger, undock is finished
         if ( gripper_data.paddles == ModelGripper::PADDLE_OPEN &&
                 gripper_data.lift == ModelGripper::LIFT_DOWN &&
-                charger_range > back_off_distance )
+                charger_range > back_off_distance ){
             mode = MODE_IDLE;
+
+            if(!myjob)
+                parked = true;
+
+        }
     }
 
     bool ObstacleAvoid()
@@ -480,6 +502,8 @@ public:
 
     void Idle()
     {
+        //printf("Idle Mode.\n");
+
         if ( Dead() )
         {
             mode = MODE_DEAD;
@@ -513,68 +537,86 @@ public:
 			// Always be around Med-Charging station
 			double a_goal = dtor( refuel[y][x] );
 
-
-
             // if we are low on juice - find the direction to the recharger instead
             if ( Hungry() )
             {
                 if ( verbose ) puts( "hungry - using refuel map" );
-
-                // use the refuel map
-                a_goal = dtor( refuel[y][x] );
 
                 if ( charger_ahoy ) // I see a charger while hungry!
                     mode = MODE_DOCK;
 
                 parked = false;
 
-            }
-            else
-            {
-                if ( ! at_dest )
-                {
-                    if ( gdata.beam[0] ) // inner break beam broken
-                        gripper->CommandClose();
-                }
+            }else{
 
-                printf("(%d)Checking for dead robots.\n", pos->GetId());
+                // Check if current job is valid
+                if(myjob){
+                    if(patient_onboard){
+                        // We just need to deliver current job
+                        mode = MODE_HOSPITAL;
+                        return;
+                    }else{
 
-                // Check for dead robots
-                for ( GList *current = g_hash_table_get_values (robots_table); current; current = g_list_next(current))
-                {
-                    const char* robot_token = (const char*)current->data;
-                    ModelPosition* bot =  (ModelPosition*) pos->GetWorld()->GetModel( robot_token );
+                        int override;
+                        myjob->patient->GetPropertyInt("charging", &override, 0);
 
-                    // Check if dead
-                    if(bot->FindPowerPack()->ProportionRemaining() < 0.10 )
+                        //printf("The charging is = %d\n" , override);
+
+                        if(override){
+                            ClearCurrentJob();
+                        }else{
+                            // We need to pick it up
+                            mode = MODE_RESCUE;
+                            return;
+                        }
+                    }
+                }else{
+
+                    // Check for dead robots
+                    for ( GList *current = g_hash_table_get_values (robots_table); current; current = g_list_next(current))
                     {
+                        const char* robot_token = (const char*)current->data;
+                        ModelPosition* bot =  (ModelPosition*) pos->GetWorld()->GetModel( robot_token );
 
-                        // Check if it is already on the job list
-                        if(!findJob(jobs, bot))
+                        // Get robot death level
+                        float death_level;
+                        bot->GetPropertyFloat("death_level", &death_level, 0.05);
+
+                        // Check if dead
+                        if(bot->FindPowerPack()->ProportionRemaining() < death_level )
                         {
-                            // Create the job
-                            Job* j = new Job(bot, NULL);
+                            // Check if not already at hospital
+                            int override;
+                            bot->GetPropertyInt("charging", &override, 0);
 
-                            // Add it to global job queue
-                            g_queue_push_tail (jobs, j);
+                            if(!override){
+                                // Check if it is already on the job list
+                                if(!findJob(jobs, bot))
+                                {
+                                    // Create the job
+                                    Job* j = new Job(bot, NULL);
 
-                            // If I don't have a job assign it to me
-                            if(!myjob){
-                                myjob = j;
-                                j->assignedTo = this;
+                                    // If I don't have a job assign it to me
+                                    if(!myjob){
+                                        myjob = j;
+                                        j->assignedTo = this;
 
-                                //if ( verbose )
-                                    printf("\nRobot (%d) died. I (%d) am going to help it! \n", bot->GetId(), pos->GetId());
+                                        // Add it to global job queue
+                                        g_queue_push_tail (jobs, j);
+
+                                        //printf("\nRobot (%d) died. I (%d) am going to help it! \n", bot->GetId(), pos->GetId());
+                                    }
+                                }
+                            }else{
+                                //printf("overriden - I can't see it! \n");
                             }
                         }
                     }
                 }
 
                 // Todo: Pick up the next slow job
-                if( !myjob && !g_queue_is_empty (jobs) )
-                {
-
-                }
+                /*if( !myjob && !g_queue_is_empty (jobs) )
+                {}*/
 
                 if ( myjob )
                 {
@@ -591,17 +633,22 @@ public:
 
             assert( ! isnan(a_error) );
 
-			if ( charger_ahoy || parked )
-			{
-			    if( charger_range < 2)
-			    {
-                    pos->Stop();
-                    parked = true;
-			    }
-			}
-            else
+            if (parked)
             {
-                pos->SetTurnSpeed(  a_error );
+                pos->Stop();
+            }else{
+                if ( charger_ahoy )
+                {
+                    if( charger_range < 1.5)
+                    {
+                        pos->Stop();
+                        parked = true;
+                    }
+                }
+                else
+                {
+                    pos->SetTurnSpeed(  a_error );
+                }
             }
         }
     }
@@ -623,6 +670,8 @@ public:
 
     void Rescue()
     {
+        //printf("Rescue Mode.\n");
+
         if ( ! ObstacleAvoid() )
         {
             if ( Hungry() )
@@ -637,7 +686,6 @@ public:
             pos->SetXSpeed( cruisespeed );
 
             Pose pose = pos->GetPose();
-
             Pose dead_body = myjob->patient->GetPose();
 
             double x1 = pose.x + 8;
@@ -645,6 +693,30 @@ public:
             double x2 = dead_body.x + 8;
             double y2 = dead_body.y + 8;
             double a_goal = -atan2(x1 - x2, y1 - y2) - (dtor(90));
+
+            // Deal with local minimas in cave map
+            int my_x = (pose.x + 8) / 4; int my_y = (pose.y + 8) / 4;
+            if ( my_x > 3 ) my_x = 3; if ( my_y > 3 ) my_y = 3;
+            if ( my_x < 0 ) my_x = 0; if ( my_y < 0 ) my_y = 0;
+            int target_x = (dead_body.x + 8) / 4; int target_y = (dead_body.y + 8) / 4;
+            if ( target_x > 3 ) target_x = 3; if ( target_y > 3 ) target_y = 3;
+            if ( target_x < 0 ) target_x = 0; if ( target_y < 0 ) target_y = 0;
+
+            // Ambulance bottom / Target top
+            if(my_x > 0 && my_y > 1){
+                if(target_x > 1 && target_y < 2){
+                    a_goal = dtor(170);
+                }
+            }
+
+            // Ambulance top / Target bottom
+            if(my_x > 0 && my_y < 2){
+                if(target_x > 1 && target_y > 1){
+                    a_goal = dtor(-170);
+                }
+            }
+            // End of local minima
+
 
             double a_error = normalize( a_goal - pose.a );
 
@@ -718,12 +790,15 @@ public:
 
     bool Dead()
     {
-        return( pos->FindPowerPack()->ProportionRemaining() < 0.05 );
+        return( pos->FindPowerPack()->ProportionRemaining() < 0.01 );
     }
 
     bool Hungry()
     {
-        return( pos->FindPowerPack()->ProportionRemaining() < 0.40 );
+        if(myjob)
+            return( pos->FindPowerPack()->ProportionRemaining() < 0.30 );
+        else
+            return( pos->FindPowerPack()->ProportionRemaining() < 0.60 );
     }
 
     bool Full()
@@ -809,6 +884,12 @@ public:
                 robot->charger_heading = f->geom.a;
 
                 //printf( "charger at %.2f radians\n", robot->charger_bearing );
+            }
+
+            if ( f->id == 9111 )
+            {
+                if (f->range < 2)
+                    robot->parked = true;
             }
 
             if ( robot->myjob && robot->myjob->patient && f->id == (int)robot->myjob->patient->GetId())   // I see the dead robot

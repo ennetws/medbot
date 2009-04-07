@@ -13,7 +13,7 @@ paused 1
 resolution 0.02
 
 # threads may speed things up here depending on available CPU cores & workload
- threadpool 8
+# threadpool 8
 # threadpool 0
 
 
@@ -22,7 +22,7 @@ window
 (
   size [ 600.000 650.000 ]
 
-  center [ -0.265 -0.379 ]
+  center [ 0.218 -1.330 ]
   rotate [ 0 0 ]
   scale 32.407
 
@@ -70,24 +70,6 @@ define charging_bump model
   obstacle_return 0
 )
 
-define autorob pioneer2dx
-(
- sicklaser( samples 16 range_max 5 laser_return 2 watts 30 )
- ctrl "fasr"
- joules 100000
- joules_capacity 400000
- fiducial_return 0
- # charging_bump( fiducial( range 3 pose [ 0 0 -0.100 0 ] ) )
-
- gripper( pose [0.250 0 -0.220 0]
-          take_watts 1000.0
-          fiducial( range 3 )
-          # paddles [ "closed" "up" ]
-			 obstacle_return 0 # cheating for simplicity
-			 # autosnatch 1
-         )
-)
-
 define charge_station model
 (
   size [ 0.100 0.300 0.100 ]
@@ -114,57 +96,81 @@ charge_station(  pose [ 7.940 -2.349 0 0 ] )
 charge_station(  pose [ 7.931 -3.367 0 0 ] )
 charge_station(  pose [ 7.931 -4.444 0 0 ] )
 
-#autorob( pose [5.911 3.811 0 -132.316] joules 300000 )
-autorob( pose [5.092 6.748 0 -86.089] joules 100000 )
-autorob( pose [4.397 5.432 0 -26.361] joules 50000 )
-autorob( pose [5.425 5.020 0 21.474] joules 1000 )
+define autorob pioneer2dx
+(
+ sicklaser( samples 16 range_max 5 laser_return 2 watts 30 )
+ ctrl "fasr"
+ joules 100000
+ joules_capacity 200000
+ fiducial_return 0
+ # charging_bump( fiducial( range 3 pose [ 0 0 -0.100 0 ] ) )
+
+ gripper( pose [0.250 0 -0.220 0]
+          take_watts 1000.0
+          fiducial( range 3 )
+          # paddles [ "closed" "up" ]
+			 obstacle_return 0 # cheating for simplicity
+			 # autosnatch 1
+         )
+)
+
+autorob( pose [2.398 3.710 0 -46.739] joules 200000 )
+autorob( pose [2.515 5.406 0 -90.090] joules 200000 )
+autorob( pose [4.666 3.663 0 155.749] joules 200000 )
+autorob( pose [6.442 6.811 0 -78.527] joules 130000 )
+autorob( pose [6.610 3.999 0 -88.056] joules 200000 )
+autorob( pose [5.434 5.218 0 -38.534] joules 12000 )
+autorob( pose [3.944 4.499 0 -35.345] joules 100000 )
+autorob( pose [-0.989 2.755 0 -173.302] joules 200000 )
+autorob( pose [2.749 7.025 0 -99.662] joules 190000 )
+autorob( pose [4.889 7.389 0 -80.428] joules 20000 )
 
 define medbot pioneer2dx
 (
- size [0.650 0.350 0.400] 				# double the length
-
+ #size [0.650 0.350 0.220] 				# double the length
  color "salmon1"
-
  mass 30.0
-
- sicklaser(samples 16 range_max 8 laser_return 2 watts 30 )
+ sicklaser(samples 32 range_max 8 laser_return 2 watts 30 fov 200)
  ctrl "medbot"
- joules 50000
- joules_capacity 100000
+ joules 100000
+ joules_capacity 300000
 
  fiducial_return 911
 
- gripper( pose [0.380 0 -0.400 0]
+ gripper( pose [0.250 0 -0.220 0]
           take_watts 1000.0
           fiducial( range 3 )
-		  obstacle_return 0
-        )
+          # paddles [ "closed" "up" ]
+			 obstacle_return 0 # cheating for simplicity
+			 # autosnatch 1
+         )
 )
 
-medbot( pose [-3.520 -6.472 0 -89.758] joules 10000 )
-medbot( pose [-5.091 -6.394 0 -89.758] joules 80000 )
-
+medbot( pose [-1.933 -6.523 0 -107.696] joules 100000 )
+medbot( pose [-4.590 -7.169 0 -14.286] joules 300000 )
 
 define medical_charge_station model
 (
-  size [ 0.100 0.300 0.100 ]
+  size [ 0.100 0.350 0.100 ]
   color "maroon2"
 
   # side blocks to restrict view angle
-  model( color "maroon2" size [0.100 0.050 0.250] pose [ 0 0.100 0 0 ] )
-  model( color "maroon2" size [0.100 0.050 0.250] pose [ 0 -0.100 0 0 ] )
+  model( color "maroon2" size [0.100 0.050 0.250] pose [ 0 0.150 0 0 ] )
+  model( color "maroon2" size [0.100 0.050 0.250] pose [ 0 -0.150 0 0 ] )
+
+  fiducial_return 9111
 
   # the charging block
   model(
 	pose [ 0.010 0 0 0 ]
 	color "cyan1"
-	size [ 0.050 0.200 0.100 ]
+	size [ 0.050 0.250 0.100 ]
 	joules -1  # provides infinite energy
 	give_watts 100000
 	fiducial_return 9110 # look for this in the fiducial sensor
    )
 )
 
-medical_charge_station(  pose [ -3.679 -7.953 0 -90.000 ] )
-medical_charge_station(  pose [ -4.924 -7.953 0 -90.000 ] )
+medical_charge_station(  pose [ -2.423 -7.924 0 -90.000 ] )
+medical_charge_station(  pose [ -4.229 -7.924 0 -90.000 ] )
 

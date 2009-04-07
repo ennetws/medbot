@@ -14,6 +14,8 @@ const int avoidduration = 10;
 const int workduration = 20;
 const int payload = 1;
 
+const double death_level = 0.05;
+const double hunger_level = 0.10;
 
 double have[4][4] =
 {
@@ -70,11 +72,6 @@ private:
 
 public:
 
-    ModelPosition* getPos()
-    {
-        return pos;
-    }
-
     Robot( ModelPosition* pos,
            Model* source,
            Model* sink )
@@ -124,11 +121,19 @@ public:
             blobfinder->Subscribe();
         }
 
-        if (pos->GetWorld()->robots_table == NULL)
-            pos->GetWorld()->robots_table = g_hash_table_new( g_direct_hash, g_direct_equal );
+        // Insert robots into a table
+        GHashTable* robots_table = NULL;
+        if(!(robots_table = (GHashTable*) pos->GetWorld()->GetModel("cave")->GetProperty("robots_table"))){
+            robots_table = g_hash_table_new( g_direct_hash, g_direct_equal );
+            pos->GetWorld()->GetModel("cave")->SetProperty("robots_table", (void*) robots_table);
+        }
 
-        g_hash_table_insert( pos->GetWorld()->robots_table, (gpointer)pos->GetId(), (void *)pos->Token() );
+        g_hash_table_insert( robots_table, (gpointer)pos->GetId(), (void *)pos->Token() );
 
+        pos->SetPropertyInt("charging", 0);
+
+        pos->SetPropertyFloat("death_level", death_level);
+        pos->SetPropertyFloat("hunger_level", hunger_level);
     }
 
     void Dock()
@@ -166,11 +171,12 @@ public:
                 pos->SetXSpeed( 0.02 );	// creep towards it
 
                 if ( charger_range < 0.08 ) // close enough
+                {
                     pos->Stop();
+                }
 
                 if ( pos->Stalled() ) // touching
                     pos->SetXSpeed( -0.01 ); // back off a bit
-
             }
         }
         else
@@ -185,6 +191,8 @@ public:
         {
             //printf( "fully charged, now back to work\n" );
             mode = MODE_UNDOCK;
+        }else{
+            pos->SetPropertyInt("charging", 1);
         }
     }
 
@@ -192,7 +200,7 @@ public:
     void UnDock()
     {
         const stg_meters_t gripper_distance = 0.2;
-        const stg_meters_t back_off_distance = 0.3;
+        const stg_meters_t back_off_distance = 0.4;
         const stg_meters_t back_off_speed = -0.05;
 
         // back up a bit
@@ -298,12 +306,18 @@ public:
 
     void Die()
     {
-        pos->Stop();
-        pos->SetFiducialReturn((int)pos->GetId());
+        // Default case
+        pos->SetFiducialReturn(0);
 
-        if(pos->FindPowerPack()->ProportionRemaining() > 0.10){
+        // override mode check
+        int override;
+        pos->GetPropertyInt("charging", &override, 0);
+
+        if(override){
             mode = MODE_WORK;
-            pos->SetFiducialReturn(0);
+        }else{
+            pos->Stop();
+            pos->SetFiducialReturn((int)pos->GetId());
         }
     }
 
@@ -311,7 +325,10 @@ public:
     {
         if ( ! ObstacleAvoid() )
         {
-            if ( Dead() )
+            int override;
+            pos->GetPropertyInt("charging", &override, 0);
+
+            if ( Dead() && !override)
             {
                 mode = MODE_DEAD;
                 return;
@@ -350,14 +367,14 @@ public:
 
                 if ( charger_ahoy ) // I see a charger while hungry!
                     mode = MODE_DOCK;
-            }
-            else
-            {
+            } else {
                 if ( ! at_dest )
                 {
                     if ( gdata.beam[0] ) // inner break beam broken
                         gripper->CommandClose();
                 }
+
+                pos->SetPropertyInt("charging", 0);
             }
 
             assert( ! isnan(a_goal ) );
@@ -412,12 +429,18 @@ public:
 
     bool Dead()
     {
-        return( pos->FindPowerPack()->ProportionRemaining() < 0.10 );
+        int override;
+        pos->GetPropertyInt("charging", &override, 0);
+
+        if(override)
+            return false;
+
+        return( pos->FindPowerPack()->ProportionRemaining() < death_level );
     }
 
     bool Hungry()
     {
-        return( pos->FindPowerPack()->ProportionRemaining() < 0.15 );
+        return( pos->FindPowerPack()->ProportionRemaining() < hunger_level );
     }
 
     bool Full()
@@ -467,10 +490,14 @@ public:
                 //puts( "dropping" );
                 // transfer a chunk between robot and goal
                 robot->sink->PushFlag( pos->PopFlag() );
+
+                int c;
+                robot->sink->GetPropertyInt("count", &c, 0);
+                robot->sink->SetPropertyInt("count", c + 1);
+
                 robot->sink->Unlock();
 
                 robot->work_put = 0;
-
             }
         }
 
@@ -546,7 +573,6 @@ extern "C" int Init( Model* mod )
     Robot* robot = new Robot( (ModelPosition*)mod,
                               mod->GetWorld()->GetModel( "source" ),
                               mod->GetWorld()->GetModel( "sink" ) );
-
     return 0; //ok
 }
 
