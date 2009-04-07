@@ -8,24 +8,30 @@ using namespace Stg;
 const bool verbose = false;
 
 // navigation control params
+const double cruisespeed = 0.4;
+const double avoidspeed = 0.05;
+const double avoidturn = 0.5;
+const double minfrontdistance = 0.7;
+const double stopdist = 0.5;
+const int avoidduration = 10;
+const int workduration = 20;
+const int payload = 1;
+
+/*
 const double cruisespeed = 0.25;
 const double avoidspeed = 0.02;
 const double avoidturn = 0.1;               // Speed
 
 const double minfrontdistance = 0.75;
 const double stopdist = 0.65;                // Distance
-
-const int avoidduration = 10;
-const int workduration = 20;                // Duration
-
-const int payload = 1;
+*/
 
 double refuel[4][4] =
 {
     { -120, -180, 180, 180 },
     { -90, -120, 180, 90 },
-    { -45, -90, 180, 180 },
-    { 0, 0, -90, -90 }
+    { 0, -90, 180, 180 },
+    { -45, 45, -120, -90 }
 };
 
 double hospital[4][4] =
