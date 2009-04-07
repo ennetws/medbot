@@ -14,8 +14,8 @@ const int avoidduration = 10;
 const int workduration = 20;
 const int payload = 1;
 
-const double death_level = 0.05;
-const double hunger_level = 0.10;
+float death_level = 0.05;
+float hunger_level = 0.25;
 
 double have[4][4] =
 {
@@ -131,6 +131,10 @@ public:
         g_hash_table_insert( robots_table, (gpointer)pos->GetId(), (void *)pos->Token() );
 
         pos->SetPropertyInt("charging", 0);
+
+
+        pos->GetWorld()->GetModel("cave")->GetPropertyFloat("death_level",&death_level, death_level);
+        pos->GetWorld()->GetModel("cave")->GetPropertyFloat("hunger_level",&hunger_level, hunger_level);
 
         pos->SetPropertyFloat("death_level", death_level);
         pos->SetPropertyFloat("hunger_level", hunger_level);
