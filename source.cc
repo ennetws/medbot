@@ -15,7 +15,16 @@ extern "C" int Init( Model* mod )
 {
   mod->AddUpdateCallback( (stg_model_callback_t)Update, NULL );
 
-  pFile = fopen ("source_stat_1.csv","w");
+  // Set stat filename
+  char filename [50];
+
+  float hunger_level;
+  mod->GetWorld()->GetModel("cave")->GetPropertyFloat("hunger_level",&hunger_level, hunger_level);
+
+  sprintf(filename, "source_stat_%d.csv", (int)(hunger_level * 100));
+
+  pFile = fopen (filename,"w");
+
   fprintf(pFile, "Number of Flags,Timestamp (m)\n");
 
   return 0; //ok

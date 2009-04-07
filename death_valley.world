@@ -43,6 +43,10 @@ floorplan
   size [16.000 16.000 0.600]
   pose [0 0 0 0]
   bitmap "bitmaps/cave.png"
+
+  # worker settings
+  db_count 2
+  db [ "death_level<float>0.05" "hunger_level<float>0.60" ]
 )
 
 zone
@@ -119,11 +123,11 @@ autorob( pose [2.515 5.406 0 -90.090] joules 200000 )
 autorob( pose [4.666 3.663 0 155.749] joules 200000 )
 autorob( pose [6.442 6.811 0 -78.527] joules 130000 )
 autorob( pose [6.610 3.999 0 -88.056] joules 200000 )
-autorob( pose [5.434 5.218 0 -38.534] joules 12000 )
+autorob( pose [5.434 5.218 0 -38.534] joules 120000 )
 autorob( pose [3.944 4.499 0 -35.345] joules 100000 )
-autorob( pose [-0.989 2.755 0 -173.302] joules 200000 )
+autorob( pose [-0.98 2.755 0 -90.302] joules 200000 )
 autorob( pose [2.749 7.025 0 -99.662] joules 190000 )
-autorob( pose [4.889 7.389 0 -80.428] joules 20000 )
+autorob( pose [4.889 7.389 0 -80.428] joules 200000 )
 
 define medbot pioneer2dx
 (
