@@ -21,7 +21,7 @@ extern "C" int Init( Model* mod )
   float hunger_level;
   mod->GetWorld()->GetModel("cave")->GetPropertyFloat("hunger_level",&hunger_level, hunger_level);
 
-  sprintf(filename, "source_stat_%d.csv", (int)(hunger_level * 100));
+  sprintf(filename, "source_stat_withMed_%d.csv", (int)(hunger_level * 100));
 
   pFile = fopen (filename,"w");
 
