@@ -14,7 +14,7 @@ resolution 0.02
 
 # threads may speed things up here depending on available CPU cores & workload
 # threadpool 8
-# threadpool 0
+threadpool 0
 
 
 # configure the GUI window
@@ -46,7 +46,7 @@ floorplan
 
   # worker settings
   db_count 2
-  db [ "death_level<float>0.05" "hunger_level<float>0.60" ]
+  db [ "death_level<float>0.05" "hunger_level<float>0.30" ]
 )
 
 zone

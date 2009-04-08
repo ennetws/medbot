@@ -174,7 +174,7 @@ public:
                 pos->SetTurnSpeed( a_goal );
                 pos->SetXSpeed( 0.02 );	// creep towards it
 
-                if ( charger_range < 0.08 ) // close enough
+                if ( charger_range < 0.09 ) // close enough
                 {
                     pos->Stop();
                 }
